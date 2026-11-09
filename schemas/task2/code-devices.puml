@@ -1,0 +1,93 @@
+@startuml code-devices
+title Уровень кода — модель управления устройствами
+
+class Device {
+  -UUID id
+  -UUID houseId
+  -UUID roomId
+  -String serialNumber
+  -String name
+  -DeviceStatus status
+  -boolean on
+  -Double currentValue
+  -Instant stateUpdatedAt
+  -Integer legacySensorId
+  +updateState(boolean on, Double value)
+}
+
+class DeviceType {
+  -UUID id
+  -String code
+  -String vendor
+  -String protocol
+}
+
+class Capability {
+  -CommandType command
+  -String unit
+  -Double minValue
+  -Double maxValue
+}
+
+class Command {
+  -UUID id
+  -UUID deviceId
+  -CommandType type
+  -Double value
+  -CommandStatus status
+  -String error
+  -Instant createdAt
+  -Instant confirmedAt
+  +markSent()
+  +markConfirmed()
+  +markFailed(String error)
+}
+
+enum DeviceStatus {
+  PENDING_PAIRING
+  ONLINE
+  OFFLINE
+}
+
+enum CommandType {
+  TURN_ON
+  TURN_OFF
+  SET_VALUE
+}
+
+enum CommandStatus {
+  CREATED
+  SENT
+  CONFIRMED
+  FAILED
+}
+
+interface CommandSender {
+  +supports(Device) : boolean
+  +send(Device, Command)
+}
+
+class KafkaCommandSender
+class LegacyHeatingSender
+note bottom of LegacyHeatingSender : только на время миграции:\nкоманды старым модулям через монолит,\nsupports() = у устройства есть legacySensorId
+
+class CommandService {
+  -DeviceRepository devices
+  -CapabilityRepository capabilities
+  -List<CommandSender> senders
+  +send(UUID deviceId, CommandType type, Double value) : Command
+  +get(UUID deviceId, UUID commandId) : Command
+}
+
+Device "*" --> "1" DeviceType
+DeviceType "1" *-- "1..*" Capability
+Command "*" --> "1" Device
+Device --> DeviceStatus
+Command --> CommandType
+Command --> CommandStatus
+CommandSender <|.. KafkaCommandSender
+CommandSender <|.. LegacyHeatingSender
+CommandService --> CommandSender : первый, у кого supports()
+CommandService ..> Capability : проверяет команду и диапазон
+CommandService ..> Command : создаёт
+@enduml

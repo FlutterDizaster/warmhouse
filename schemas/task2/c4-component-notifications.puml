@@ -1,0 +1,21 @@
+@startuml c4-component-notifications
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title Диаграмма компонентов — Уведомления
+
+ContainerQueue(kafka, "Шина событий", "Kafka")
+System_Ext(push, "Сервисы рассылки", "FCM, SMTP")
+
+Container_Boundary(nt, "Уведомления (Go)") {
+    Component(consumer, "EventConsumer", "Kafka consumer", "Выбирает события, о которых надо сообщить")
+    Component(tpl, "Templates", "Модуль", "Текст уведомления под событие")
+    Component(sender, "Sender", "Модуль", "Отправка push и email, повтор при ошибке")
+}
+
+Rel(kafka, consumer, "telemetry.measured, device.state", "Kafka")
+Rel(consumer, tpl, "Событие")
+Rel(tpl, sender, "Готовое уведомление")
+Rel(sender, push, "Отправляет", "HTTPS/SMTP")
+
+SHOW_LEGEND()
+@enduml

@@ -1,0 +1,69 @@
+@startuml c4-container-to-be
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_TOP_DOWN()
+
+title Диаграмма контейнеров — To-Be
+
+Person(user, "Пользователь", "Сам покупает и подключает устройства, настраивает сценарии")
+
+System_Boundary(eco, "Экосистема «Тёплый дом»") {
+    Container(web, "Веб-приложение", "React, SPA", "Личный кабинет: дома, устройства, телеметрия, сценарии")
+    Container(gw, "API Gateway", "Nginx / Kong", "Единая точка входа, проверка JWT, передаёт сервисам id пользователя и его домов")
+
+    Container(users, "Пользователи и дома", "Go", "Учётные записи, дома, комнаты, выдаёт JWT")
+    ContainerDb(users_db, "БД пользователей", "PostgreSQL")
+
+    Container(devices, "Управление устройствами", "Java, Spring Boot", "Реестр устройств и типов, состояние, команды")
+    ContainerDb(devices_db, "БД устройств", "PostgreSQL")
+
+    Container(telemetry, "Телеметрия", "Python, FastAPI", "Приём показаний, история, последние значения")
+    ContainerDb(telemetry_db, "БД телеметрии", "TimescaleDB")
+
+    Container(scenarios, "Сценарии", "Go", "Правила «если — то» и расписания")
+    ContainerDb(scenarios_db, "БД сценариев", "PostgreSQL")
+
+    Container(notify, "Уведомления", "Go", "Push и email по событиям")
+
+    Container(devgw, "Шлюз устройств", "Go", "Подключение устройств, адаптеры протоколов, приём данных от устройств")
+    Container(mqtt, "MQTT-брокер", "EMQX", "Связь с устройствами в домах")
+
+    ContainerQueue(kafka, "Шина событий", "Kafka", "telemetry.measured, device.commands, device.state, house.deleted")
+
+    Container(video, "Видеопотоки", "MediaMTX", "Принимает поток с камер и отдаёт его в браузер")
+}
+
+System_Ext(devices_ext, "Устройства в доме", "Отопление, свет, ворота, камеры, в т.ч. партнёрские")
+System_Ext(heating_old, "Старые модули отопления", "Работают только через HTTP-опрос")
+System_Ext(push, "Сервисы рассылки", "FCM, SMTP")
+
+Rel(user, web, "Пользуется", "HTTPS")
+Rel(web, gw, "Вызывает API", "REST/JSON")
+Rel(gw, users, "Пользователи, дома", "REST")
+Rel(gw, devices, "Устройства, команды", "REST")
+Rel(gw, telemetry, "Показания и история", "REST")
+Rel(gw, scenarios, "Сценарии", "REST")
+
+Rel(users, users_db, "Читает и пишет", "SQL")
+Rel(devices, devices_db, "Читает и пишет", "SQL")
+Rel(telemetry, telemetry_db, "Читает и пишет", "SQL")
+Rel(scenarios, scenarios_db, "Читает и пишет", "SQL")
+
+Rel(devices, kafka, "Публикует команды, читает состояние и house.deleted", "Kafka")
+Rel(devgw, kafka, "Публикует показания и состояние, читает команды", "Kafka")
+Rel(telemetry, kafka, "Читает telemetry.measured", "Kafka")
+Rel(scenarios, kafka, "Читает показания, состояние и house.deleted, публикует команды", "Kafka")
+Rel(users, kafka, "Публикует house.deleted", "Kafka")
+Rel(devgw, devices, "Регистрирует подключённое устройство", "REST")
+Rel(notify, kafka, "Читает события", "Kafka")
+Rel(notify, push, "Отправляет", "HTTPS/SMTP")
+
+Rel(devgw, mqtt, "Подписка и публикация", "MQTT")
+Rel(devices_ext, mqtt, "Показания, состояние; получает команды", "MQTT/TLS")
+
+Rel(devgw, heating_old, "Команды и опрос через HTTP-адаптер", "HTTP")
+Rel(devices_ext, video, "Видео с камер", "RTSP")
+Rel(web, video, "Просмотр камер", "WebRTC/HLS")
+
+SHOW_LEGEND()
+@enduml

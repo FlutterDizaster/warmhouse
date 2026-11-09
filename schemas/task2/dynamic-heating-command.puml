@@ -1,0 +1,34 @@
+@startuml dynamic-heating-command
+title Включение отопления: от пользователя до реле и обратно
+
+actor "Пользователь" as user
+participant "API Gateway" as gw
+participant "Управление\nустройствами" as dev
+queue "Kafka" as kafka
+participant "Шлюз устройств" as dg
+participant "MQTT-брокер" as mqtt
+participant "Реле отопления" as relay
+participant "Телеметрия" as tel
+
+user -> gw : POST /devices/{id}/commands\n{"type": "TURN_ON"}
+gw -> gw : проверка JWT,\nX-User-Id и X-House-Ids из claims
+gw -> dev : POST /devices/{id}/commands
+dev -> dev : дом устройства есть в X-House-Ids?\nтип поддерживает TURN_ON?
+dev -> kafka : device.commands
+dev --> gw : 202 Accepted {commandId, status: SENT}
+gw --> user : 202 Accepted
+
+kafka -> dg : device.commands
+dg -> mqtt : home/{homeId}/device/{id}/cmd
+mqtt -> relay : TURN_ON
+relay -> mqtt : state {on: true}
+mqtt -> dg : home/{homeId}/device/{id}/data
+dg -> kafka : device.state
+kafka -> dev : device.state
+dev -> dev : команда CONFIRMED,\nсостояние обновлено
+
+relay -> mqtt : temperature 21.4
+mqtt -> dg
+dg -> kafka : telemetry.measured
+kafka -> tel : telemetry.measured
+@enduml

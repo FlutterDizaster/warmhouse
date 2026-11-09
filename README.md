@@ -73,19 +73,76 @@ Go (Gin, pgx) и PostgreSQL. В базе одна таблица `sensors`, по
 
 # Задание 2. Проектирование микросервисной архитектуры
 
-В этом задании вам нужно предоставить только диаграммы в модели C4. Мы не просим вас отдельно описывать получившиеся микросервисы и то, как вы определили взаимодействия между компонентами To-Be системы. Если вы правильно подготовите диаграммы C4, они и так это покажут.
+Сервисы выделял по контекстам из первого задания, у каждого своя база. Подключение устройств стало шлюзом устройств: кроме регистрации там вся связь с железом, MQTT, адаптеры протоколов и приём данных.
+
+Что решил:
+
+- Снаружи всё идёт через API Gateway, он же проверяет токен, дальше REST к нужному сервису.
+- Между сервисами события в Kafka (`telemetry.measured`, `device.commands`, `device.state`). Сценарии и уведомления подписываются на них и никого не опрашивают, а новый сервис добавляется без правок в старых.
+- Устройства сами шлют показания и состояние по MQTT, синхронного опроса из запроса пользователя больше нет.
+- Новые типы устройств и старые модули отопления, которые умеют только HTTP, подключаются адаптерами в шлюзе.
+
+Монолита в целевой схеме нет. Переходить к ней надо постепенно (strangler fig), промежуточный этап с монолитом показан в шестом задании.
+
+Отдельных сервисов под отопление, свет и ворота не делал: для системы это одно и то же, устройство с типом, командами и состоянием. Новый вид устройств добавляется записью в справочнике типов и адаптером в шлюзе, так же подключаются и датчики партнёров, о которых сейчас ещё ничего не известно: пишется адаптер, остальные сервисы не меняются. Исключение камеры. Видео через Kafka гонять незачем, поэтому есть медиасервер: камера отдаёт ему RTSP, браузер забирает поток у него. В реестре устройств камеры при этом есть, как и всё остальное.
+
+Доступ к дому проверяется так: сервис пользователей при входе кладёт в JWT id домов пользователя, API Gateway передаёт их сервисам в `X-House-Ids`, а сервис сверяет с ними дом устройства. Владелец у дома один, отдельной таблицы доступов пока нет.
+
+План перехода. Сервисов шесть, разработчиков пять, поэтому по шагам:
+
+1. Устройства и телеметрия рядом с монолитом (это MVP из шестого задания). Монолит публикует события о датчиках и показаниях, команды старым модулям сервис устройств пока шлёт через монолит.
+2. Пользователи и дома, API Gateway, авторизация. Веб-клиент переключается на новые API, монолит остаётся только драйвером старых модулей.
+3. Шлюз устройств и MQTT. Новые устройства подключаются только через него, старые модули отопления переводятся на HTTP-адаптер шлюза, `LegacyHeatingSender` удаляется.
+4. Оставшиеся датчики из таблицы `sensors` переносятся в сервис устройств, монолит выключается.
+5. Сценарии и уведомления, они ни от чего в монолите не зависят.
 
 **Диаграмма контейнеров (Containers)**
 
-Добавьте диаграмму.
+As-Is: [schemas/task2/c4-container-as-is.puml](schemas/task2/c4-container-as-is.puml)
+
+![Containers As-Is](schemas/task2/c4-container-as-is.png)
+
+To-Be: [schemas/task2/c4-container-to-be.puml](schemas/task2/c4-container-to-be.puml)
+
+![Containers To-Be](schemas/task2/c4-container-to-be.png)
 
 **Диаграмма компонентов (Components)**
 
-Добавьте диаграмму для каждого из выделенных микросервисов.
+Управление устройствами: [schemas/task2/c4-component-devices.puml](schemas/task2/c4-component-devices.puml)
+
+![Components Devices](schemas/task2/c4-component-devices.png)
+
+Телеметрия: [schemas/task2/c4-component-telemetry.puml](schemas/task2/c4-component-telemetry.puml)
+
+![Components Telemetry](schemas/task2/c4-component-telemetry.png)
+
+Шлюз устройств: [schemas/task2/c4-component-device-gateway.puml](schemas/task2/c4-component-device-gateway.puml)
+
+![Components Device Gateway](schemas/task2/c4-component-device-gateway.png)
+
+Пользователи и дома: [schemas/task2/c4-component-users.puml](schemas/task2/c4-component-users.puml)
+
+![Components Users](schemas/task2/c4-component-users.png)
+
+Сценарии: [schemas/task2/c4-component-scenarios.puml](schemas/task2/c4-component-scenarios.puml)
+
+![Components Scenarios](schemas/task2/c4-component-scenarios.png)
+
+Уведомления: [schemas/task2/c4-component-notifications.puml](schemas/task2/c4-component-notifications.puml)
+
+![Components Notifications](schemas/task2/c4-component-notifications.png)
 
 **Диаграмма кода (Code)**
 
-Добавьте одну диаграмму или несколько.
+Для кода взял модель устройства и отправку команд. Отправка спрятана за `CommandSender`: в целевой схеме команда уходит в Kafka, а пока идёт миграция, старым модулям отопления через монолит (`LegacyHeatingSender`, он работает в MVP). Когда модули переедут на шлюз, класс удаляется.
+
+[schemas/task2/code-devices.puml](schemas/task2/code-devices.puml)
+
+![Code Devices](schemas/task2/code-devices.png)
+
+Включение отопления по шагам: [schemas/task2/dynamic-heating-command.puml](schemas/task2/dynamic-heating-command.puml)
+
+![Heating command](schemas/task2/dynamic-heating-command.png)
 
 # Задание 3. Разработка ER-диаграммы
 

@@ -1,0 +1,27 @@
+@startuml c4-component-telemetry
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title Диаграмма компонентов — Телеметрия
+
+Container(gw, "API Gateway", "Nginx / Kong")
+ContainerDb(db, "БД телеметрии", "TimescaleDB")
+ContainerQueue(kafka, "Шина событий", "Kafka")
+
+Container_Boundary(tel, "Телеметрия (Python, FastAPI)") {
+    Component(ingest, "MeasurementConsumer", "Kafka consumer", "Читает telemetry.measured пачками")
+    Component(validator, "MeasurementValidator", "Модуль", "Отбрасывает дубли и значения вне допустимого диапазона")
+    Component(api, "TelemetryRouter", "FastAPI router", "Последнее значение по устройству, история за период, агрегаты")
+    Component(svc, "TelemetryService", "Сервисный слой", "Запись показаний, расчёт агрегатов, кеш последних значений")
+    Component(repo, "MeasurementRepository", "SQLAlchemy", "Запись и выборка временных рядов")
+}
+
+Rel(kafka, ingest, "telemetry.measured", "Kafka")
+Rel(ingest, validator, "Передаёт пачку")
+Rel(validator, svc, "Корректные показания")
+Rel(gw, api, "Запросы", "REST/JSON")
+Rel(api, svc, "Вызывает")
+Rel(svc, repo, "Использует")
+Rel(repo, db, "Читает и пишет", "SQL")
+
+SHOW_LEGEND()
+@enduml

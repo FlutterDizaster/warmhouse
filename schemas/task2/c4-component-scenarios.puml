@@ -1,0 +1,29 @@
+@startuml c4-component-scenarios
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title Диаграмма компонентов — Сценарии
+
+Container(gw, "API Gateway", "Nginx / Kong")
+ContainerDb(db, "БД сценариев", "PostgreSQL")
+ContainerQueue(kafka, "Шина событий", "Kafka")
+
+Container_Boundary(sc, "Сценарии (Go)") {
+    Component(api, "ScenarioHandler", "HTTP-обработчик", "Создание и редактирование сценариев")
+    Component(listener, "TriggerListener", "Kafka consumer", "Сверяет показания с условиями сценариев, удаляет сценарии удалённого дома")
+    Component(scheduler, "Scheduler", "Таймер", "Сценарии по расписанию")
+    Component(runner, "ActionRunner", "Kafka producer", "Публикует команды из действий сценария")
+    Component(repo, "ScenarioRepository", "pgx", "Сценарии и действия")
+}
+
+Rel(gw, api, "Запросы", "REST/JSON")
+Rel(api, repo, "Использует")
+Rel(kafka, listener, "telemetry.measured, device.state, house.deleted", "Kafka")
+Rel(listener, repo, "Активные сценарии")
+Rel(scheduler, repo, "Сценарии на текущее время")
+Rel(listener, runner, "Условие выполнено")
+Rel(scheduler, runner, "Время пришло")
+Rel(runner, kafka, "device.commands", "Kafka")
+Rel(repo, db, "Читает и пишет", "SQL")
+
+SHOW_LEGEND()
+@enduml
