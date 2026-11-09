@@ -194,67 +194,16 @@ REST там, где клиенту нужен ответ сразу: получ�
 
 # Задание 5. Работа с docker и docker-compose
 
-Перейдите в apps.
+temperature-api написал на Go без зависимостей: [apps/temperature-api](apps/temperature-api). Отдаёт случайную температуру от 18 до 26 в формате, который ждёт монолит (`TemperatureResponse` в `services/temperature_service.go`).
 
-Там находится приложение-монолит для работы с датчиками температуры. В README.md описано как запустить решение.
+Путей два: `GET /temperature?location=Kitchen` и `GET /temperature/3`. Второй важен, монолит в Get All Sensors и Get Sensor by ID ходит именно туда, без него температура в списке не менялась бы. Комнаты и id из условия: 1 Living Room, 2 Bedroom, 3 Kitchen, остальное Unknown и `0`.
 
-Вам нужно:
+В [apps/docker-compose.yml](apps/docker-compose.yml) добавил postgres и temperature-api. У postgres `init.sql` в `/docker-entrypoint-initdb.d`, volume и healthcheck, монолит ждёт его готовности. `POSTGRES_DB` не задаю: скрипт сам делает `CREATE DATABASE smarthome` и с заданной переменной упал бы. temperature-api собирается multi-stage Dockerfile на alpine, порт 8081.
 
-1) сделать простое приложение temperature-api на любом удобном для вас языке программирования, которое при запросе /temperature?location= будет отдавать рандомное значение температуры.
-
-Locations - название комнаты, sensorId - идентификатор названия комнаты
-
-```
-	// If no location is provided, use a default based on sensor ID
-	if location == "" {
-		switch sensorID {
-		case "1":
-			location = "Living Room"
-		case "2":
-			location = "Bedroom"
-		case "3":
-			location = "Kitchen"
-		default:
-			location = "Unknown"
-		}
-	}
-
-	// If no sensor ID is provided, generate one based on location
-	if sensorID == "" {
-		switch location {
-		case "Living Room":
-			sensorID = "1"
-		case "Bedroom":
-			sensorID = "2"
-		case "Kitchen":
-			sensorID = "3"
-		default:
-			sensorID = "0"
-		}
-	}
+```bash
+cd apps
+docker compose up --build -d
 ```
 
-2) Приложение следует упаковать в Docker и добавить в docker-compose. Порт по умолчанию должен быть 8081
+Проверял по Postman-коллекции: Create Sensor, потом несколько раз Get All Sensors, `value` каждый раз новое.
 
-3) Кроме того для smart_home приложения требуется база данных - добавьте в docker-compose файл настройки для запуска postgres с указанием скрипта инициализации ./smart_home/init.sql
-
-Для проверки можно использовать Postman коллекцию smarthome-api.postman_collection.json и вызвать:
-
-- Create Sensor
-- Get All Sensors
-
-Должно при каждом вызове отображаться разное значение температуры
-
-Ревьюер будет проверять точно так же.
-
-
-# **Задание 6. Разработка MVP**
-
-Необходимо создать новые микросервисы и обеспечить их интеграции с существующим монолитом для плавного перехода к микросервисной архитектуре. 
-
-### **Что нужно сделать**
-
-1. Создайте новые микросервисы для управления телеметрией и устройствами (с простейшей логикой), которые будут интегрированы с существующим монолитным приложением. Каждый микросервис на своем ООП языке.
-2. Обеспечьте взаимодействие между микросервисами и монолитом (при желании с помощью брокера сообщений), чтобы постепенно перенести функциональность из монолита в микросервисы. 
-
-В результате у вас должны быть созданы Dockerfiles и docker-compose для запуска микросервисов. 
