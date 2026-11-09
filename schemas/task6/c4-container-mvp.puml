@@ -1,0 +1,31 @@
+@startuml c4-container-mvp
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title MVP: монолит и первые микросервисы
+
+Person(user, "Пользователь")
+System_Ext(temp, "temperature-api", "Go, имитация датчиков температуры в домах")
+
+System_Boundary(mvp, "Тёплый дом, переходный этап") {
+    Container(app, "Монолит", "Go, Gin", "Датчики и отопление, как раньше. Публикует события о датчиках и показаниях")
+        Container(devices, "device-service", "Java, Spring Boot", "Устройства и команды")
+    Container(telemetry, "telemetry-service", "Python, FastAPI", "История показаний")
+    ContainerQueue(kafka, "Kafka", "Apache Kafka (KRaft)", "legacy.sensor.registered, telemetry.measured, device.commands")
+    ContainerDb(pg, "PostgreSQL", "16", "Базы smarthome, devices, telemetry")
+}
+
+Rel(user, app, "Датчики", "REST :8080")
+Rel(user, devices, "Устройства, команды", "REST :8082")
+Rel(user, telemetry, "История", "REST :8083")
+Rel(app, temp, "Опрос температуры", "HTTP")
+Rel(app, kafka, "legacy.sensor.registered, telemetry.measured", "Kafka")
+Rel(kafka, devices, "legacy.sensor.registered", "Kafka")
+Rel(kafka, telemetry, "telemetry.measured", "Kafka")
+Rel(devices, kafka, "device.commands (новые устройства, в MVP не читает никто)", "Kafka")
+Rel(devices, app, "Команды старым модулям", "REST, PATCH /api/v1/sensors/{id}/value")
+Rel(app, pg, "smarthome", "SQL")
+Rel(devices, pg, "devices", "SQL")
+Rel(telemetry, pg, "telemetry", "SQL")
+
+SHOW_LEGEND()
+@enduml

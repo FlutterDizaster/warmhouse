@@ -207,3 +207,49 @@ docker compose up --build -d
 
 Проверял по Postman-коллекции: Create Sensor, потом несколько раз Get All Sensors, `value` каждый раз новое.
 
+# Задание 6. Разработка MVP
+
+Сделал два сервиса из To-Be на разных языках и связал их с монолитом через Kafka. Монолит работает как раньше и параллельно отдаёт данные новым сервисам.
+
+![MVP](schemas/task6/c4-container-mvp.png)
+
+[schemas/task6/c4-container-mvp.puml](schemas/task6/c4-container-mvp.puml)
+
+**device-service**, Java 21 и Spring Boot ([apps/device-service](apps/device-service)), порт 8082. API из четвёртого задания: устройство, обновление состояния, команды и их статус. Есть справочник типов с возможностями (термостат, реле света), по нему проверяется команда. Отправка, как на диаграмме кода, через `CommandSender`:
+
+- `LegacyHeatingSender` для старых модулей: команда идёт в монолит через `PATCH /api/v1/sensors/{id}/value`, монолит пока остаётся драйвером отопления;
+- `KafkaCommandSender` для новых устройств: команда уходит в `device.commands`, оттуда её заберёт шлюз.
+
+**telemetry-service**, Python 3.12 и FastAPI ([apps/telemetry-service](apps/telemetry-service)), порт 8083. Читает `telemetry.measured`, хранит историю (в монолите её не было), отдаёт последние значения и историю по интервалам.
+
+В монолит добавил отправку событий ([apps/smart_home/events](apps/smart_home/events)): при создании датчика `legacy.sensor.registered`, по нему device-service заводит у себя устройство, и при каждом получении температуры `telemetry.measured`. Если Kafka недоступна, монолит работает без событий. id устройства считается из номера датчика (UUID v5), чтобы не заводить таблицу соответствий, у датчика 1 это `b57d004d-6b64-590b-8a33-3f586a3ba2c3`.
+
+Базы `devices` и `telemetry` для MVP живут в том же Postgres, их создаёт [apps/postgres/services.sql](apps/postgres/services.sql). Топики создаёт одноразовый контейнер `kafka-init`. Событие `legacy.sensor.registered` добавил в [AsyncAPI](schemas/task4/events-asyncapi.yaml).
+
+### Запуск и проверка
+
+```bash
+cd apps
+docker compose up --build -d
+```
+
+1. Create Sensor из `smarthome-api.postman_collection.json`, в монолите появится датчик 1.
+2. Несколько раз Get All Sensors, монолит опросит температуру и отправит показания в Kafka.
+3. Дальше [apps/warmhouse-mvp.postman_collection.json](apps/warmhouse-mvp.postman_collection.json):
+   - Get Device: датчик уже есть в device-service как термостат;
+   - History и Latest: показания из второго шага лежат в telemetry-service;
+   - Set Temperature (`SET_VALUE 23`): команда проходит через монолит и сразу получает `CONFIRMED`. Turn Off тоже `CONFIRMED`.
+4. Что команда дошла до монолита, видно в его базе. Через API монолита не видно: `GET /api/v1/sensors` подставляет в `value` и `status` свежие данные из temperature-api.
+
+   ```bash
+   docker exec smarthome-postgres psql -U postgres -d smarthome -c "select id, value, status from sensors"
+   ```
+
+   После Set Temperature там `1 | 23 | active`, после Turn Off `inactive`.
+
+Что в MVP упрощено:
+
+- доступ к дому не проверяется, сверять `X-House-Ids` не с чем, пока нет сервиса пользователей;
+- в монолите `value` одновременно и показание, и уставка, поэтому `SET_VALUE` пишет туда целевую температуру, а следующий опрос показывает текущую. Разделить их получится, когда отопление уйдёт из монолита;
+- показания в телеметрию попадают, только когда кто-то запрашивает датчики у монолита, фонового опроса нет;
+- `KafkaCommandSender` в MVP не срабатывает: все устройства пока приходят из монолита и считаются старыми модулями, а читать `device.commands` некому, шлюза ещё нет.

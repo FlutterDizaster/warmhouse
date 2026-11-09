@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"smarthome/db"
+	"smarthome/events"
 	"smarthome/models"
 	"smarthome/services"
 
@@ -18,13 +19,15 @@ import (
 type SensorHandler struct {
 	DB                 *db.DB
 	TemperatureService *services.TemperatureService
+	Events             *events.Publisher
 }
 
 // NewSensorHandler creates a new SensorHandler
-func NewSensorHandler(db *db.DB, temperatureService *services.TemperatureService) *SensorHandler {
+func NewSensorHandler(db *db.DB, temperatureService *services.TemperatureService, publisher *events.Publisher) *SensorHandler {
 	return &SensorHandler{
 		DB:                 db,
 		TemperatureService: temperatureService,
+		Events:             publisher,
 	}
 }
 
@@ -59,6 +62,7 @@ func (h *SensorHandler) GetSensors(c *gin.Context) {
 				sensors[i].Value = tempData.Value
 				sensors[i].Status = tempData.Status
 				sensors[i].LastUpdated = tempData.Timestamp
+				h.Events.Measured(sensor.ID, tempData.Value, sensor.Unit, tempData.Timestamp)
 				log.Printf("Updated temperature data for sensor %d from external API", sensor.ID)
 			} else {
 				log.Printf("Failed to fetch temperature data for sensor %d: %v", sensor.ID, err)
@@ -91,6 +95,7 @@ func (h *SensorHandler) GetSensorByID(c *gin.Context) {
 			sensor.Value = tempData.Value
 			sensor.Status = tempData.Status
 			sensor.LastUpdated = tempData.Timestamp
+			h.Events.Measured(sensor.ID, tempData.Value, sensor.Unit, tempData.Timestamp)
 			log.Printf("Updated temperature data for sensor %d from external API", sensor.ID)
 		} else {
 			log.Printf("Failed to fetch temperature data for sensor %d: %v", sensor.ID, err)
@@ -141,6 +146,8 @@ func (h *SensorHandler) CreateSensor(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	h.Events.SensorRegistered(sensor)
 
 	c.JSON(http.StatusCreated, sensor)
 }
