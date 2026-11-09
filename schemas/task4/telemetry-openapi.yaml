@@ -1,0 +1,289 @@
+openapi: 3.0.3
+info:
+  title: Telemetry API
+  version: 1.0.0
+  description: |
+    Сервис телеметрии. Показания приходят из Kafka (см. events-asyncapi.yaml),
+    по HTTP сервис только отдаёт данные. Исключение: POST /measurements для
+    монолита и тестов, пока старые датчики не переведены на шлюз.
+servers:
+  - url: http://localhost:8083/api/v1
+    description: локально
+  - url: https://api.warmhouse.example/api/v1
+    description: через API Gateway
+
+security:
+  - bearerAuth: []
+
+paths:
+  /telemetry/devices/{deviceId}/latest:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/HouseIds'
+    get:
+      summary: Последние показания устройства
+      description: По одному последнему значению на каждую метрику.
+      operationId: getLatest
+      responses:
+        '200':
+          description: Последние значения
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Measurement'
+              examples:
+                thermostat:
+                  value:
+                    - deviceId: 6f1c2a9e-3b7d-4c55-9a51-2d8e0f6b1a10
+                      metric: temperature
+                      value: 21.4
+                      unit: C
+                      measuredAt: '2025-11-10T08:25:00Z'
+                    - deviceId: 6f1c2a9e-3b7d-4c55-9a51-2d8e0f6b1a10
+                      metric: humidity
+                      value: 41
+                      unit: '%'
+                      measuredAt: '2025-11-10T08:25:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /telemetry/devices/{deviceId}:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/HouseIds'
+    get:
+      summary: История показаний за период
+      description: |
+        Если указан interval, значения усредняются по интервалам (для графиков),
+        иначе отдаются сырые показания, но не больше limit.
+      operationId: getHistory
+      parameters:
+        - name: metric
+          in: query
+          required: true
+          schema:
+            type: string
+            example: temperature
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: по умолчанию текущее время
+          schema:
+            type: string
+            format: date-time
+        - name: interval
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [1m, 5m, 1h, 1d]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 1000
+      responses:
+        '200':
+          description: Ряд показаний
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Series'
+              examples:
+                hourly:
+                  value:
+                    deviceId: 6f1c2a9e-3b7d-4c55-9a51-2d8e0f6b1a10
+                    metric: temperature
+                    unit: C
+                    interval: 1h
+                    points:
+                      - time: '2025-11-10T06:00:00Z'
+                        value: 19.8
+                      - time: '2025-11-10T07:00:00Z'
+                        value: 20.6
+                      - time: '2025-11-10T08:00:00Z'
+                        value: 21.3
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /measurements:
+    post:
+      summary: Записать показание
+      operationId: addMeasurement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Measurement'
+            examples:
+              fromMonolith:
+                value:
+                  deviceId: 6f1c2a9e-3b7d-4c55-9a51-2d8e0f6b1a10
+                  metric: temperature
+                  value: 21.4
+                  unit: C
+                  measuredAt: '2025-11-10T08:25:00Z'
+      responses:
+        '201':
+          description: Сохранено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Measurement'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: токен проверяет API Gateway
+
+  parameters:
+    DeviceId:
+      name: deviceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    HouseIds:
+      name: X-House-Ids
+      in: header
+      required: true
+      description: id домов пользователя через запятую, проставляет API Gateway из claims JWT; показания отдаются только по устройствам этих домов
+      schema:
+        type: string
+
+  schemas:
+    Measurement:
+      type: object
+      required: [deviceId, metric, value, measuredAt]
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        metric:
+          type: string
+          example: temperature
+        value:
+          type: number
+        unit:
+          type: string
+          nullable: true
+        measuredAt:
+          type: string
+          format: date-time
+
+    Series:
+      type: object
+      required: [deviceId, metric, points]
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        metric:
+          type: string
+        unit:
+          type: string
+          nullable: true
+        interval:
+          type: string
+          nullable: true
+        points:
+          type: array
+          items:
+            type: object
+            required: [time, value]
+            properties:
+              time:
+                type: string
+                format: date-time
+              value:
+                type: number
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Некорректные параметры
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            badPeriod:
+              value:
+                code: VALIDATION_ERROR
+                message: from должен быть раньше to
+    Unauthorized:
+      description: Нет токена или он недействителен
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Устройство в чужом доме
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: По устройству нет данных
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            noData:
+              value:
+                code: NO_DATA
+                message: Для устройства нет показаний
+    ServerError:
+      description: Внутренняя ошибка
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            internal:
+              value:
+                code: INTERNAL_ERROR
+                message: Что-то пошло не так, попробуйте позже

@@ -167,11 +167,30 @@ To-Be: [schemas/task2/c4-container-to-be.puml](schemas/task2/c4-container-to-be.
 
 ### 1. Тип API
 
-Укажите, какой тип API вы будете использовать для взаимодействия микросервисов. Объясните своё решение.
+REST там, где клиенту нужен ответ сразу: получить устройство, отправить команду, посмотреть историю температуры.
+
+События в Kafka (AsyncAPI) между сервисами и для всего, что идёт от устройств. Показания и смену состояния слушают сразу несколько сервисов. Будь это синхронные вызовы, отправитель знал бы про всех получателей и ждал каждого, а так он публикует событие, и всё. Заодно Kafka сглаживает пики: если телеметрия ненадолго упала, показания дочитаются после подъёма.
+
+Поэтому команда устройству возвращает `202 Accepted`: она ушла в шину, а подтверждение от реле придёт позже событием `device.state`. Статус команды можно спросить через `GET /devices/{id}/commands/{commandId}`.
 
 ### 2. Документация API
 
-Здесь приложите ссылки на документацию API для микросервисов, которые вы спроектировали в первой части проектной работы. Для документирования используйте Swagger/OpenAPI или AsyncAPI.
+[schemas/task4/devices-openapi.yaml](schemas/task4/devices-openapi.yaml), управление устройствами:
+- `GET /devices`: устройства домов пользователя;
+- `POST /devices`: регистрация устройства, его вызывает шлюз после сопряжения;
+- `GET /devices/{deviceId}`: устройство и его текущее состояние;
+- `PUT /devices/{deviceId}/state`: обновление состояния (для старых модулей и монолита);
+- `POST /devices/{deviceId}/commands`: отправка команды;
+- `GET /devices/{deviceId}/commands/{commandId}`: статус команды.
+
+[schemas/task4/telemetry-openapi.yaml](schemas/task4/telemetry-openapi.yaml), телеметрия:
+- `GET /telemetry/devices/{deviceId}/latest`: последние показания;
+- `GET /telemetry/devices/{deviceId}`: история за период с усреднением по интервалам;
+- `POST /measurements`: запись показания по HTTP, временно для монолита.
+
+[schemas/task4/events-asyncapi.yaml](schemas/task4/events-asyncapi.yaml): события `telemetry.measured`, `device.commands`, `device.state`, `house.deleted` и `legacy.sensor.registered` на время миграции.
+
+Открываются в [Swagger Editor](https://editor.swagger.io/) и [AsyncAPI Studio](https://studio.asyncapi.com/). У эндпоинтов есть тела запросов и ответов, коды и примеры. Авторизация по JWT: его проверяет API Gateway и передаёт сервису id пользователя в `X-User-Id` и id его домов в `X-House-Ids`.
 
 # Задание 5. Работа с docker и docker-compose
 

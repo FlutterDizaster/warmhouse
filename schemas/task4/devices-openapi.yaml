@@ -1,0 +1,495 @@
+openapi: 3.0.3
+info:
+  title: Device Management API
+  version: 1.0.0
+  description: |
+    Сервис управления устройствами «Тёплого дома».
+    Все запросы приходят через API Gateway. Он проверяет JWT и кладёт в заголовки id пользователя (X-User-Id)
+    и id его домов (X-House-Ids, берутся из claims токена). Сервис сверяет дом устройства с X-House-Ids.
+servers:
+  - url: http://localhost:8082/api/v1
+    description: локально
+  - url: https://api.warmhouse.example/api/v1
+    description: через API Gateway
+
+tags:
+  - name: devices
+  - name: commands
+
+security:
+  - bearerAuth: []
+
+paths:
+  /devices:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+      - $ref: '#/components/parameters/HouseIds'
+    get:
+      tags: [devices]
+      summary: Устройства домов пользователя
+      operationId: listDevices
+      responses:
+        '200':
+          description: Список устройств
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Device'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags: [devices]
+      summary: Зарегистрировать устройство
+      description: Вызывает шлюз устройств после сопряжения нового устройства.
+      operationId: registerDevice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceRegistration'
+            examples:
+              relay:
+                value:
+                  houseId: 0b8a4d2e-91c3-4f6a-b7e2-55d0c1a9e7f3
+                  type: light_relay
+                  serialNumber: LR-2025-000412
+                  name: Свет на кухне
+      responses:
+        '201':
+          description: Устройство создано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Устройство с таким серийным номером уже есть
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /devices/{deviceId}:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/UserId'
+      - $ref: '#/components/parameters/HouseIds'
+    get:
+      tags: [devices]
+      summary: Информация об устройстве
+      operationId: getDevice
+      responses:
+        '200':
+          description: Устройство найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+              examples:
+                thermostat:
+                  value:
+                    id: 6f1c2a9e-3b7d-4c55-9a51-2d8e0f6b1a10
+                    houseId: 0b8a4d2e-91c3-4f6a-b7e2-55d0c1a9e7f3
+                    roomId: 4c2e7a10-6d5b-4e8f-a1c9-0f3b2d7e8a64
+                    type: thermostat
+                    serialNumber: TH-2024-001873
+                    name: Отопление в гостиной
+                    status: ONLINE
+                    state:
+                      on: true
+                      value: 22.5
+                      unit: C
+                      updatedAt: '2025-11-10T08:15:30Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /devices/{deviceId}/state:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/UserId'
+      - $ref: '#/components/parameters/HouseIds'
+    put:
+      tags: [devices]
+      summary: Обновить состояние устройства
+      description: |
+        Ручное обновление состояния. Нужно для старых модулей, которые не умеют сами
+        присылать состояние, и для монолита в переходный период.
+      operationId: updateDeviceState
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StateUpdate'
+            examples:
+              turnedOn:
+                value:
+                  on: true
+                  value: 21.0
+      responses:
+        '200':
+          description: Состояние обновлено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceState'
+              examples:
+                updated:
+                  value:
+                    on: true
+                    value: 21.0
+                    unit: C
+                    updatedAt: '2025-11-10T08:20:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /devices/{deviceId}/commands:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/UserId'
+      - $ref: '#/components/parameters/HouseIds'
+    post:
+      tags: [commands]
+      summary: Отправить команду устройству
+      description: |
+        Команда проверяется по возможностям типа устройства и отправляется дальше, ответ 202.
+        Статус в ответе: SENT, если команда ушла в Kafka (подтверждение придёт позже в device.state),
+        CONFIRMED для старых модулей, где монолит отвечает сразу, FAILED, если отправить не удалось.
+      operationId: sendCommand
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommandRequest'
+            examples:
+              turnOn:
+                value:
+                  type: TURN_ON
+              setTemperature:
+                value:
+                  type: SET_VALUE
+                  value: 23
+      responses:
+        '202':
+          description: Команда принята
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Command'
+              examples:
+                accepted:
+                  value:
+                    id: a3d9e1f0-7c2b-4b6e-8f45-91e0c2d7b388
+                    deviceId: 6f1c2a9e-3b7d-4c55-9a51-2d8e0f6b1a10
+                    type: SET_VALUE
+                    value: 23
+                    status: SENT
+                    createdAt: '2025-11-10T08:21:04Z'
+                legacyConfirmed:
+                  value:
+                    id: 5b0e8c34-2f61-4d7a-9c13-7e4a0b9d2f51
+                    deviceId: b57d004d-6b64-590b-8a33-3f586a3ba2c3
+                    type: SET_VALUE
+                    value: 23
+                    status: CONFIRMED
+                    createdAt: '2025-11-10T08:21:04Z'
+                    confirmedAt: '2025-11-10T08:21:04Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Устройство офлайн или не поддерживает такую команду
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                unsupported:
+                  value:
+                    code: COMMAND_NOT_SUPPORTED
+                    message: Тип gate_drive не поддерживает SET_VALUE
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /devices/{deviceId}/commands/{commandId}:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/UserId'
+      - $ref: '#/components/parameters/HouseIds'
+      - name: commandId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [commands]
+      summary: Статус команды
+      operationId: getCommand
+      responses:
+        '200':
+          description: Команда найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Command'
+              examples:
+                confirmed:
+                  value:
+                    id: a3d9e1f0-7c2b-4b6e-8f45-91e0c2d7b388
+                    deviceId: 6f1c2a9e-3b7d-4c55-9a51-2d8e0f6b1a10
+                    type: SET_VALUE
+                    value: 23
+                    status: CONFIRMED
+                    createdAt: '2025-11-10T08:21:04Z'
+                    confirmedAt: '2025-11-10T08:21:05Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: токен проверяет API Gateway
+
+  parameters:
+    DeviceId:
+      name: deviceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    UserId:
+      name: X-User-Id
+      in: header
+      required: true
+      description: id пользователя, проставляет API Gateway
+      schema:
+        type: string
+        format: uuid
+    HouseIds:
+      name: X-House-Ids
+      in: header
+      required: true
+      description: id домов пользователя через запятую, проставляет API Gateway из claims JWT
+      schema:
+        type: string
+
+  schemas:
+    DeviceRegistration:
+      type: object
+      required: [houseId, type, serialNumber, name]
+      properties:
+        houseId:
+          type: string
+          format: uuid
+        roomId:
+          type: string
+          format: uuid
+        type:
+          type: string
+          description: код типа устройства
+        serialNumber:
+          type: string
+        name:
+          type: string
+
+    Device:
+      type: object
+      required: [id, houseId, type, serialNumber, name, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        houseId:
+          type: string
+          format: uuid
+        roomId:
+          type: string
+          format: uuid
+          nullable: true
+        type:
+          type: string
+          description: код типа устройства
+          example: thermostat
+        serialNumber:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          enum: [PENDING_PAIRING, ONLINE, OFFLINE]
+        state:
+          $ref: '#/components/schemas/DeviceState'
+
+    DeviceState:
+      type: object
+      properties:
+        on:
+          type: boolean
+        value:
+          type: number
+          nullable: true
+        unit:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+
+    StateUpdate:
+      type: object
+      required: [on]
+      properties:
+        on:
+          type: boolean
+        value:
+          type: number
+
+    CommandRequest:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [TURN_ON, TURN_OFF, SET_VALUE]
+        value:
+          type: number
+          description: обязателен для SET_VALUE
+
+    Command:
+      type: object
+      required: [id, deviceId, type, status, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [TURN_ON, TURN_OFF, SET_VALUE]
+        value:
+          type: number
+          nullable: true
+        status:
+          type: string
+          enum: [CREATED, SENT, CONFIRMED, FAILED]
+        error:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        confirmedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Некорректный запрос
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            noValue:
+              value:
+                code: VALIDATION_ERROR
+                message: Для SET_VALUE нужно передать value
+    Unauthorized:
+      description: Нет токена или он недействителен
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unauthorized:
+              value:
+                code: UNAUTHORIZED
+                message: Нужна авторизация
+    Forbidden:
+      description: Устройство в чужом доме
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden:
+              value:
+                code: FORBIDDEN
+                message: Нет доступа к дому устройства
+    NotFound:
+      description: Устройство не найдено
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            notFound:
+              value:
+                code: DEVICE_NOT_FOUND
+                message: Устройство не найдено
+    ServerError:
+      description: Внутренняя ошибка
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            internal:
+              value:
+                code: INTERNAL_ERROR
+                message: Что-то пошло не так, попробуйте позже
