@@ -1,0 +1,33 @@
+@startuml c4-component-devices
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title Диаграмма компонентов — Управление устройствами
+
+Container(gw, "API Gateway", "Nginx / Kong")
+ContainerDb(db, "БД устройств", "PostgreSQL")
+ContainerQueue(kafka, "Шина событий", "Kafka")
+
+Container_Boundary(devices, "Управление устройствами (Java, Spring Boot)") {
+    Component(deviceCtrl, "DeviceController", "REST-контроллер", "Регистрация и список устройств, привязка к дому и комнате")
+    Component(commandCtrl, "CommandController", "REST-контроллер", "Приём команд: включить, выключить, установить значение")
+    Component(deviceSvc, "DeviceService", "Сервисный слой", "Правила работы с устройствами, сверяет дом устройства с домами пользователя из X-House-Ids")
+    Component(commandSvc, "CommandService", "Сервисный слой", "Проверяет команду по возможностям типа устройства и отправляет её")
+    Component(stateConsumer, "StateConsumer", "Kafka consumer", "Обновляет состояние по device.state, удаляет устройства удалённого дома")
+    Component(publisher, "CommandPublisher", "Kafka producer", "Пишет команды в device.commands")
+    Component(repo, "DeviceRepository", "Spring Data JPA", "Доступ к устройствам, типам и состоянию")
+}
+
+Rel(gw, deviceCtrl, "Запросы", "REST/JSON")
+Rel(gw, commandCtrl, "Запросы", "REST/JSON")
+Rel(deviceCtrl, deviceSvc, "Вызывает")
+Rel(commandCtrl, commandSvc, "Вызывает")
+Rel(commandSvc, deviceSvc, "Получает устройство и его тип")
+Rel(commandSvc, publisher, "Проверенные команды")
+Rel(stateConsumer, deviceSvc, "Обновляет состояние")
+Rel(deviceSvc, repo, "Использует")
+Rel(repo, db, "Читает и пишет", "SQL")
+Rel(publisher, kafka, "device.commands", "Kafka")
+Rel(kafka, stateConsumer, "device.state, house.deleted", "Kafka")
+
+SHOW_LEGEND()
+@enduml

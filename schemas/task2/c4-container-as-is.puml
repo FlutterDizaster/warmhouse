@@ -1,0 +1,24 @@
+@startuml c4-container-as-is
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title Диаграмма контейнеров — As-Is
+
+Person(user, "Пользователь", "Владелец дома")
+Person(technician, "Специалист по подключению", "Регистрирует модуль в доме")
+
+System_Boundary(sh, "Умный дом (монолит)") {
+    Container(web, "Веб-интерфейс", "HTML/JS", "Включение отопления, просмотр температуры")
+    Container(app, "Smart Home App", "Go, Gin", "HTTP API /api/v1/sensors: CRUD модулей, команды, опрос температуры")
+    ContainerDb(db, "База данных", "PostgreSQL", "Одна таблица sensors: устройство + последнее показание")
+}
+
+System_Ext(heating, "Модуль отопления", "Реле + датчик температуры, ~100 шт.")
+
+Rel(user, web, "Пользуется", "HTTPS")
+Rel(web, app, "Вызывает API", "REST/JSON")
+Rel(technician, app, "Регистрирует модуль", "REST/JSON")
+Rel(app, db, "Читает и пишет", "SQL")
+Rel(app, heating, "Команды вкл/выкл и запрос температуры", "HTTP, синхронно")
+
+SHOW_LEGEND()
+@enduml

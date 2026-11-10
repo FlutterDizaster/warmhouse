@@ -1,0 +1,32 @@
+@startuml c4-component-device-gateway
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title Диаграмма компонентов — Шлюз устройств
+
+Container(mqtt, "MQTT-брокер", "EMQX")
+ContainerQueue(kafka, "Шина событий", "Kafka")
+Container(devices, "Управление устройствами", "Java")
+System_Ext(heating_old, "Старые модули отопления", "Только HTTP-опрос")
+
+Container_Boundary(dg, "Шлюз устройств (Go)") {
+    Component(pairing, "PairingHandler", "MQTT-обработчик", "Сопряжение нового устройства по коду из комплекта")
+    Component(router, "MessageRouter", "MQTT-обработчик", "Разбирает входящие сообщения по топикам и типу устройства")
+    Component(adapters, "ProtocolAdapters", "Набор адаптеров", "Перевод форматов партнёров (Zigbee-хаб, Matter и др.) и старых HTTP-модулей во внутренний формат")
+    Component(cmdConsumer, "CommandConsumer", "Kafka consumer", "Читает device.commands и отправляет их устройству")
+    Component(producer, "EventProducer", "Kafka producer", "Пишет telemetry.measured и device.state")
+}
+
+Rel(mqtt, pairing, "home/+/pair", "MQTT")
+Rel(mqtt, router, "home/+/device/+/data", "MQTT")
+Rel(router, adapters, "Сообщение партнёрского устройства")
+Rel(router, producer, "Показание или состояние")
+Rel(adapters, producer, "Сообщение во внутреннем формате")
+Rel(pairing, devices, "Регистрирует устройство", "REST")
+Rel(kafka, cmdConsumer, "device.commands", "Kafka")
+Rel(cmdConsumer, adapters, "Перевод команды в формат устройства")
+Rel(cmdConsumer, mqtt, "home/+/device/+/cmd", "MQTT")
+Rel(adapters, heating_old, "Команды и опрос", "HTTP")
+Rel(producer, kafka, "telemetry.measured, device.state", "Kafka")
+
+SHOW_LEGEND()
+@enduml

@@ -1,0 +1,246 @@
+asyncapi: 2.6.0
+info:
+  title: Warmhouse Events
+  version: 1.0.0
+  description: |
+    События между сервисами через Kafka. Ключ сообщения deviceId,
+    чтобы события одного устройства попадали в одну партицию и не перемешивались.
+    Документ описывает всю шину, а не один сервис: в publish указано, кто пишет в канал, в subscribe, кто читает.
+servers:
+  local:
+    url: localhost:9092
+    protocol: kafka
+
+channels:
+  telemetry.measured:
+    description: Новое показание датчика
+    publish:
+      summary: Шлюз устройств публикует показания (и монолит в переходный период)
+      operationId: publishMeasurement
+      message:
+        $ref: '#/components/messages/Measurement'
+    subscribe:
+      summary: Читают телеметрия, сценарии и уведомления
+      operationId: onMeasurement
+      message:
+        $ref: '#/components/messages/Measurement'
+
+  legacy.sensor.registered:
+    description: В монолите создан датчик. Нужен на время миграции, чтобы сервис устройств знал о старых модулях
+    publish:
+      summary: Публикует монолит при создании датчика
+      operationId: publishSensorRegistered
+      message:
+        $ref: '#/components/messages/SensorRegistered'
+    subscribe:
+      summary: Читает сервис устройств и заводит у себя такое же устройство
+      operationId: onSensorRegistered
+      message:
+        $ref: '#/components/messages/SensorRegistered'
+
+  device.commands:
+    description: Команда устройству
+    publish:
+      summary: Публикуют сервис устройств и сценарии
+      operationId: publishCommand
+      message:
+        $ref: '#/components/messages/DeviceCommand'
+    subscribe:
+      summary: Читает шлюз устройств и отправляет команду по MQTT
+      operationId: onCommand
+      message:
+        $ref: '#/components/messages/DeviceCommand'
+
+  device.state:
+    description: Устройство сообщило новое состояние или результат команды
+    publish:
+      summary: Публикует шлюз устройств
+      operationId: publishState
+      message:
+        $ref: '#/components/messages/DeviceState'
+    subscribe:
+      summary: Читают сервис устройств, сценарии и уведомления
+      operationId: onState
+      message:
+        $ref: '#/components/messages/DeviceState'
+
+  house.deleted:
+    description: Пользователь удалил дом, сервисы чистят свои данные по этому дому
+    publish:
+      summary: Публикует сервис пользователей и домов
+      operationId: publishHouseDeleted
+      message:
+        $ref: '#/components/messages/HouseDeleted'
+    subscribe:
+      summary: Читают сервис устройств и сценарии
+      operationId: onHouseDeleted
+      message:
+        $ref: '#/components/messages/HouseDeleted'
+
+components:
+  messages:
+    HouseDeleted:
+      name: HouseDeleted
+      contentType: application/json
+      payload:
+        type: object
+        required: [houseId, deletedAt]
+        properties:
+          houseId:
+            type: string
+            format: uuid
+          deletedAt:
+            type: string
+            format: date-time
+      examples:
+        - name: deleted
+          payload:
+            houseId: 0b8a4d2e-91c3-4f6a-b7e2-55d0c1a9e7f3
+            deletedAt: '2025-11-10T09:00:00Z'
+
+    Measurement:
+      name: Measurement
+      contentType: application/json
+      payload:
+        type: object
+        required: [eventId, deviceId, metric, value, measuredAt]
+        properties:
+          eventId:
+            type: string
+            format: uuid
+            description: для отсева дублей
+          deviceId:
+            type: string
+            format: uuid
+          houseId:
+            type: string
+            format: uuid
+            description: у старых датчиков из монолита дома нет, поле не приходит
+          metric:
+            type: string
+          value:
+            type: number
+          unit:
+            type: string
+          measuredAt:
+            type: string
+            format: date-time
+      examples:
+        - name: temperature
+          payload:
+            eventId: 0d2f6c1e-8a4b-4d3f-b9e7-1c5a2e7f9b30
+            deviceId: 6f1c2a9e-3b7d-4c55-9a51-2d8e0f6b1a10
+            houseId: 0b8a4d2e-91c3-4f6a-b7e2-55d0c1a9e7f3
+            metric: temperature
+            value: 21.4
+            unit: C
+            measuredAt: '2025-11-10T08:25:00Z'
+
+    SensorRegistered:
+      name: SensorRegistered
+      contentType: application/json
+      payload:
+        type: object
+        required: [sensorId, deviceId, name, type, registeredAt]
+        properties:
+          sensorId:
+            type: integer
+            description: id датчика в монолите
+          deviceId:
+            type: string
+            format: uuid
+            description: id в сервисе устройств, считается из sensorId (UUID v5)
+          name:
+            type: string
+          type:
+            type: string
+          location:
+            type: string
+          unit:
+            type: string
+          registeredAt:
+            type: string
+            format: date-time
+      examples:
+        - name: livingRoom
+          payload:
+            sensorId: 1
+            deviceId: b57d004d-6b64-590b-8a33-3f586a3ba2c3
+            name: Living Room Temperature
+            type: temperature
+            location: Living Room
+            unit: °C
+            registeredAt: '2025-11-10T08:00:00Z'
+
+    DeviceCommand:
+      name: DeviceCommand
+      contentType: application/json
+      payload:
+        type: object
+        required: [commandId, deviceId, houseId, type, createdAt]
+        properties:
+          commandId:
+            type: string
+            format: uuid
+          deviceId:
+            type: string
+            format: uuid
+          houseId:
+            type: string
+            format: uuid
+          type:
+            type: string
+            enum: [TURN_ON, TURN_OFF, SET_VALUE]
+          value:
+            type: number
+          source:
+            type: string
+            enum: [user, scenario]
+          createdAt:
+            type: string
+            format: date-time
+      examples:
+        - name: setTemperature
+          payload:
+            commandId: a3d9e1f0-7c2b-4b6e-8f45-91e0c2d7b388
+            deviceId: 6f1c2a9e-3b7d-4c55-9a51-2d8e0f6b1a10
+            houseId: 0b8a4d2e-91c3-4f6a-b7e2-55d0c1a9e7f3
+            type: SET_VALUE
+            value: 23
+            source: user
+            createdAt: '2025-11-10T08:21:04Z'
+
+    DeviceState:
+      name: DeviceState
+      contentType: application/json
+      payload:
+        type: object
+        required: [deviceId, on, reportedAt]
+        properties:
+          deviceId:
+            type: string
+            format: uuid
+          commandId:
+            type: string
+            format: uuid
+            description: если состояние пришло в ответ на команду
+          on:
+            type: boolean
+          value:
+            type: number
+          online:
+            type: boolean
+          error:
+            type: string
+          reportedAt:
+            type: string
+            format: date-time
+      examples:
+        - name: commandConfirmed
+          payload:
+            deviceId: 6f1c2a9e-3b7d-4c55-9a51-2d8e0f6b1a10
+            commandId: a3d9e1f0-7c2b-4b6e-8f45-91e0c2d7b388
+            on: true
+            value: 23
+            online: true
+            reportedAt: '2025-11-10T08:21:05Z'

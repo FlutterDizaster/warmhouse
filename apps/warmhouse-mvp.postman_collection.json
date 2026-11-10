@@ -1,0 +1,274 @@
+{
+	"info": {
+		"_postman_id": "167a15df-172c-4d0c-b42f-229b108331ff",
+		"name": "Warmhouse MVP",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"description": "Сначала создайте датчик через Create Sensor из smarthome-api (он получит id 1), потом запросы отсюда."
+	},
+	"variable": [
+		{
+			"key": "deviceId",
+			"value": "b57d004d-6b64-590b-8a33-3f586a3ba2c3"
+		},
+		{
+			"key": "userId",
+			"value": "9a4c1e2b-0f3d-4b8a-9c6e-2d7f1a5b3c80"
+		},
+		{
+			"key": "commandId",
+			"value": ""
+		}
+	],
+	"item": [
+		{
+			"name": "device-service",
+			"item": [
+				{
+					"name": "Get All Devices",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{userId}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "http://localhost:8082/api/v1/devices"
+						}
+					}
+				},
+				{
+					"name": "Get Device",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{userId}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "http://localhost:8082/api/v1/devices/{{deviceId}}"
+						}
+					}
+				},
+				{
+					"name": "Turn On",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{userId}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "http://localhost:8082/api/v1/devices/{{deviceId}}/commands"
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"type\": \"TURN_ON\"\n}"
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.collectionVariables.set('commandId', pm.response.json().id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					]
+				},
+				{
+					"name": "Set Temperature",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{userId}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "http://localhost:8082/api/v1/devices/{{deviceId}}/commands"
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"type\": \"SET_VALUE\",\n    \"value\": 23\n}"
+						}
+					}
+				},
+				{
+					"name": "Turn Off",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{userId}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "http://localhost:8082/api/v1/devices/{{deviceId}}/commands"
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"type\": \"TURN_OFF\"\n}"
+						}
+					}
+				},
+				{
+					"name": "Get Command",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{userId}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "http://localhost:8082/api/v1/devices/{{deviceId}}/commands/{{commandId}}"
+						}
+					}
+				},
+				{
+					"name": "Update State",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{userId}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "http://localhost:8082/api/v1/devices/{{deviceId}}/state"
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"on\": true,\n    \"value\": 21.5\n}"
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "telemetry-service",
+			"item": [
+				{
+					"name": "Latest",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{userId}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "http://localhost:8083/api/v1/telemetry/devices/{{deviceId}}/latest"
+						}
+					}
+				},
+				{
+					"name": "History",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{userId}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "http://localhost:8083/api/v1/telemetry/devices/{{deviceId}}?metric=temperature&from=2025-01-01T00:00:00Z"
+						}
+					}
+				},
+				{
+					"name": "History by minute",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{userId}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "http://localhost:8083/api/v1/telemetry/devices/{{deviceId}}?metric=temperature&from=2025-01-01T00:00:00Z&interval=1m"
+						}
+					}
+				},
+				{
+					"name": "Add Measurement",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{userId}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "http://localhost:8083/api/v1/measurements"
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"deviceId\": \"{{deviceId}}\",\n    \"metric\": \"temperature\",\n    \"value\": 21.4,\n    \"unit\": \"°C\",\n    \"measuredAt\": \"2025-11-10T08:25:00Z\"\n}"
+						}
+					}
+				}
+			]
+		}
+	]
+}

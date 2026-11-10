@@ -1,0 +1,28 @@
+@startuml c4-component-users
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title Диаграмма компонентов — Пользователи и дома
+
+Container(gw, "API Gateway", "Nginx / Kong")
+ContainerDb(db, "БД пользователей", "PostgreSQL")
+ContainerQueue(kafka, "Шина событий", "Kafka")
+
+Container_Boundary(users, "Пользователи и дома (Go)") {
+    Component(auth, "AuthHandler", "HTTP-обработчик", "Регистрация, вход, JWT с id домов пользователя")
+    Component(houses, "HouseHandler", "HTTP-обработчик", "Дома и комнаты")
+    Component(svc, "HouseService", "Сервисный слой", "Проверка, что дом принадлежит пользователю, удаление дома")
+    Component(events, "EventPublisher", "Kafka producer", "house.deleted")
+    Component(repo, "Repository", "pgx", "Пользователи, дома, комнаты")
+}
+
+Rel(gw, auth, "Запросы", "REST/JSON")
+Rel(gw, houses, "Запросы", "REST/JSON")
+Rel(auth, repo, "Использует")
+Rel(houses, svc, "Вызывает")
+Rel(svc, repo, "Использует")
+Rel(svc, events, "Дом удалён")
+Rel(repo, db, "Читает и пишет", "SQL")
+Rel(events, kafka, "house.deleted", "Kafka")
+
+SHOW_LEGEND()
+@enduml

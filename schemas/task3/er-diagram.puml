@@ -1,0 +1,155 @@
+@startuml er-diagram
+title ER-диаграмма экосистемы «Тёплый дом»
+
+hide circle
+skinparam linetype ortho
+
+package "Пользователи и дома" {
+  entity "User" as user {
+    * id : uuid <<PK>>
+    --
+    * email : varchar(255) <<unique>>
+    * password_hash : varchar(255)
+    name : varchar(100)
+    phone : varchar(20)
+    * created_at : timestamptz
+  }
+
+  entity "House" as house {
+    * id : uuid <<PK>>
+    --
+    * owner_id : uuid <<FK>>
+    * name : varchar(100)
+    address : varchar(255)
+    timezone : varchar(50)
+    * created_at : timestamptz
+  }
+
+  entity "Room" as room {
+    * id : uuid <<PK>>
+    --
+    * house_id : uuid <<FK>>
+    * name : varchar(100)
+  }
+}
+
+package "Управление устройствами" {
+  entity "DeviceType" as dtype {
+    * id : uuid <<PK>>
+    --
+    * code : varchar(50) <<unique>>
+    * name : varchar(100)
+    vendor : varchar(100)
+    * protocol : varchar(30)
+  }
+
+  entity "Capability" as cap {
+    * id : uuid <<PK>>
+    --
+    * type_id : uuid <<FK>>
+    * command : varchar(30)
+    unit : varchar(20)
+    min_value : numeric
+    max_value : numeric
+  }
+
+  entity "Module" as module {
+    * id : uuid <<PK>>
+    --
+    * house_id : uuid
+    * serial_number : varchar(64) <<unique>>
+    * protocol : varchar(30)
+    firmware_version : varchar(30)
+    * status : varchar(20)
+    last_seen_at : timestamptz
+  }
+
+  entity "Device" as device {
+    * id : uuid <<PK>>
+    --
+    * type_id : uuid <<FK>>
+    module_id : uuid <<FK>>
+    * house_id : uuid
+    room_id : uuid
+    * serial_number : varchar(64) <<unique>>
+    * name : varchar(100)
+    * status : varchar(20)
+    is_on : boolean
+    current_value : numeric
+    state_updated_at : timestamptz
+    * created_at : timestamptz
+  }
+
+  entity "Command" as command {
+    * id : uuid <<PK>>
+    --
+    * device_id : uuid <<FK>>
+    * issued_by : uuid
+    * type : varchar(30)
+    value : numeric
+    * status : varchar(20)
+    error : varchar(255)
+    * created_at : timestamptz
+    confirmed_at : timestamptz
+  }
+}
+
+package "Телеметрия" {
+  entity "TelemetryData" as tel {
+    * device_id : uuid <<PK>>
+    * measured_at : timestamptz <<PK>>
+    * metric : varchar(30) <<PK>>
+    --
+    * event_id : uuid <<unique>>
+    house_id : uuid
+    * value : numeric
+    unit : varchar(20)
+    * received_at : timestamptz
+  }
+}
+
+package "Сценарии" {
+  entity "Scenario" as scenario {
+    * id : uuid <<PK>>
+    --
+    * house_id : uuid
+    * name : varchar(100)
+    * enabled : boolean
+    trigger_device_id : uuid
+    trigger_metric : varchar(30)
+    trigger_condition : varchar(10)
+    trigger_value : numeric
+    schedule_cron : varchar(50)
+  }
+
+  entity "ScenarioAction" as action {
+    * id : uuid <<PK>>
+    --
+    * scenario_id : uuid <<FK>>
+    * device_id : uuid
+    * command : varchar(30)
+    value : numeric
+    * position : int
+  }
+}
+
+user ||--o{ house : владеет
+house ||--o{ room : состоит из
+
+dtype ||--|{ cap : поддерживает
+dtype ||--o{ device : тип
+module |o--o{ device : управляет
+device ||--o{ command : получает
+
+scenario ||--|{ action : выполняет
+
+' связи между сервисами: только id без внешних ключей
+house ||..o{ module
+house ||..o{ device
+room |o..o{ device
+house ||..o{ scenario
+device ||..o{ tel : генерирует
+device ||..o{ action
+user ||..o{ command : отправил
+device |o..o{ scenario : триггер
+@enduml
